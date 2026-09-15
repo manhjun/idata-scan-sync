@@ -6,6 +6,7 @@ export class Room {
     this.env = env;
     this.sessions = [];
     this.codes = null; // array of strings, lazy-loaded from durable storage
+    this.history = null; // array of strings previously cleared, lazy-loaded
   }
 
   async loadCodes() {
@@ -17,6 +18,18 @@ export class Room {
 
   async saveCodes() {
     await this.state.storage.put("codes", this.codes);
+    await this.state.storage.setAlarm(Date.now() + ROOM_TTL_MS);
+  }
+
+  async loadHistory() {
+    if (this.history === null) {
+      this.history = (await this.state.storage.get("history")) || [];
+    }
+    return this.history;
+  }
+
+  async saveHistory() {
+    await this.state.storage.put("history", this.history);
     await this.state.storage.setAlarm(Date.now() + ROOM_TTL_MS);
   }
 
@@ -47,9 +60,10 @@ export class Room {
     server.accept();
 
     await this.loadCodes();
+    await this.loadHistory();
     this.sessions.push(server);
 
-    server.send(JSON.stringify({ type: "init", codes: this.codes }));
+    server.send(JSON.stringify({ type: "init", codes: this.codes, history: this.history }));
 
     server.addEventListener("message", async (event) => {
       let msg;
@@ -81,9 +95,14 @@ export class Room {
 
       if (msg.type === "clear_list") {
         await this.loadCodes();
-        this.codes = [];
-        this.broadcast({ type: "list_cleared" });
-        await this.saveCodes();
+        await this.loadHistory();
+        if (this.codes.length > 0) {
+          this.history = this.history.concat(this.codes);
+          this.codes = [];
+          this.broadcast({ type: "list_cleared", history: this.history });
+          await this.saveCodes();
+          await this.saveHistory();
+        }
       }
 
       if (msg.type === "close_room") {

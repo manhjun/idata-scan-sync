@@ -109,7 +109,7 @@ const LANDING_HTML = /* js */ `<!doctype html>
 <title>iData Scan Sync</title>
 <style>
   body{font-family:system-ui,-apple-system,sans-serif;margin:0;background:#f5f5f7;color:#1d1d1f;
-       display:flex;align-items:center;justify-content:center;min-height:100vh}
+       display:flex;align-items:center;justify-content:center;min-height:100vh;min-height:100dvh}
   .wrap{background:#fff;border-radius:14px;padding:22px 20px;box-shadow:0 2px 12px rgba(0,0,0,.08);width:min(320px,90vw);text-align:center}
   h1{font-size:17px;margin:0 0 16px}
   h2{font-size:12px;color:#888;text-align:left;margin:0 0 6px;font-weight:600}
@@ -209,8 +209,8 @@ const ROOM_HTML = /* js */ `<!doctype html>
 <title>iData Scan Sync</title>
 <style>
   body{font-family:system-ui,-apple-system,sans-serif;margin:0;background:#f5f5f7;color:#1d1d1f}
-  header{background:#1d1d1f;color:#fff;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px}
-  header .info{text-align:center;flex:1}
+  header{position:sticky;top:0;background:#1d1d1f;color:#fff;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+  header .info{display:flex;align-items:center;justify-content:center;gap:10px}
   header .room-id{font-size:19px;font-weight:700;letter-spacing:2px}
   header .status{font-size:11px;opacity:.7;margin-top:1px}
   header .close-btn{background:#ff3b30;color:#fff;border:none;border-radius:8px;padding:6px 10px;font-size:12px;white-space:nowrap}
@@ -224,6 +224,14 @@ const ROOM_HTML = /* js */ `<!doctype html>
   .toolbar button.danger{border-color:#ff3b30;color:#ff3b30}
   .count{padding:0 12px 6px;font-size:11px;color:#888}
   ul#list{list-style:none;margin:0;padding:0 12px 12px}
+  .history-toggle{margin:4px 12px 8px;padding:8px 10px;background:#eee;border-radius:9px;font-size:12px;color:#666;display:flex;justify-content:space-between;align-items:center}
+  .history-toggle:active{opacity:.7}
+  .history-toggle .chev{transition:transform .15s}
+  .history-toggle.open .chev{transform:rotate(180deg)}
+  ul#historyList{list-style:none;margin:0 12px 12px;padding:0;display:none}
+  ul#historyList.show{display:block}
+  ul#historyList li{display:block;background:#f0f0f0;color:#888;border-radius:9px;padding:8px 11px;margin-bottom:5px;font-size:13px;font-weight:500}
+  ul#historyList li .idx{color:#bbb;font-weight:400;margin-right:6px}
   li{background:#fff;border-radius:9px;padding:9px 11px;margin-bottom:6px;font-weight:600;font-size:14px;box-shadow:0 1px 2px rgba(0,0,0,.06);display:flex;align-items:center;justify-content:space-between;gap:8px}
   li .idx{color:#aaa;font-weight:400;margin-right:6px;user-select: none}
   li .code-text{flex:1;overflow-wrap:anywhere}
@@ -260,6 +268,11 @@ const ROOM_HTML = /* js */ `<!doctype html>
 </div>
 <div class="count" id="countLabel"></div>
 <ul id="list"></ul>
+<div class="history-toggle" id="historyToggle">
+  <span>Lịch sử đã xóa (<span id="historyCount">0</span>)</span>
+  <span class="chev">▾</span>
+</div>
+<ul id="historyList"></ul>
 <div class="toast" id="toast"></div>
 <div class="overlay" id="overlay">
   <div class="card">
@@ -300,13 +313,19 @@ function scheduleReconnect() {
 function setStatus(text) { document.getElementById('wsStatus').textContent = text; }
 
 let codes = [];
+let history = [];
 const listEl = document.getElementById('list');
 const countEl = document.getElementById('countLabel');
+const historyListEl = document.getElementById('historyList');
+const historyCountEl = document.getElementById('historyCount');
+const historyToggleEl = document.getElementById('historyToggle');
 
 function handleMessage(msg) {
   if (msg.type === 'init') {
     codes = msg.codes.slice().reverse(); // newest first
+    history = (msg.history || []).slice().reverse();
     renderAll();
+    renderHistory();
   } else if (msg.type === 'code_added') {
     codes.unshift(msg.code);
     renderAll();
@@ -317,7 +336,9 @@ function handleMessage(msg) {
     if (isMobile) focusHiddenKeyboard();
   } else if (msg.type === 'list_cleared') {
     codes = [];
+    history = (msg.history || []).slice().reverse();
     renderAll();
+    renderHistory();
     showToast('Đã xóa danh sách');
     if (isMobile) focusHiddenKeyboard();
   } else if (msg.type === 'room_closed') {
@@ -327,6 +348,21 @@ function handleMessage(msg) {
     ws.close();
   }
 }
+
+function renderHistory() {
+  historyCountEl.textContent = history.length;
+  historyListEl.innerHTML = '';
+  history.forEach((code, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = '<span class="idx">' + (i + 1) + '.</span>' + code;
+    historyListEl.appendChild(li);
+  });
+}
+
+historyToggleEl.onclick = () => {
+  historyToggleEl.classList.toggle('open');
+  historyListEl.classList.toggle('show');
+};
 
 function renderAll() {
   countEl.textContent = codes.length + ' mã';
@@ -484,6 +520,7 @@ document.getElementById('closeBtn').onclick = async () => {
 };
 
 renderAll();
+renderHistory();
 connect();
 </script>
 </body>
