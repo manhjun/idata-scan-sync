@@ -50,7 +50,7 @@ function html(body) {
   });
 }
 
-const LANDING_HTML = `<!doctype html>
+const LANDING_HTML = /* js */ `<!doctype html>
 <html lang="vi">
 <head>
 <meta charset="utf-8">
@@ -94,12 +94,12 @@ document.getElementById('joinForm').onsubmit = (e) => {
 </body>
 </html>`;
 
-const ROOM_HTML = `<!doctype html>
+const ROOM_HTML = /* js */ `<!doctype html>
 <html lang="vi">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Phòng scan</title>
+<title>iData Scan Sync</title>
 <style>
   body{font-family:system-ui,-apple-system,sans-serif;margin:0;background:#f5f5f7;color:#1d1d1f}
   header{background:#1d1d1f;color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px}
@@ -117,10 +117,13 @@ const ROOM_HTML = `<!doctype html>
   .toolbar button.danger{border-color:#ff3b30;color:#ff3b30}
   .count{padding:0 16px 8px;font-size:12px;color:#888}
   ul#list{list-style:none;margin:0;padding:0 16px 16px}
-  li{background:#fff;border-radius:10px;padding:12px 14px;margin-bottom:8px;font-weight:600;font-size:16px;box-shadow:0 1px 2px rgba(0,0,0,.06)}
-  li .idx{color:#aaa;font-weight:400;margin-right:8px}
+  li{background:#fff;border-radius:10px;padding:12px 14px;margin-bottom:8px;font-weight:600;font-size:16px;box-shadow:0 1px 2px rgba(0,0,0,.06);display:flex;align-items:center;justify-content:space-between;gap:8px}
+  li .idx{color:#aaa;font-weight:400;margin-right:8px;user-select: none}
+  li .code-text{flex:1;overflow-wrap:anywhere}
+  li .del-btn{background:none;border:none;color:#ff3b30;font-size:20px;line-height:1;padding:4px 8px;flex-shrink:0;user-select: none}
+  li .del-btn:active{opacity:.6}
   .empty{text-align:center;color:#999;padding:24px;font-size:14px}
-  .toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#1d1d1f;color:#fff;padding:8px 16px;border-radius:20px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none}
+  .toast{position:fixed;top:16px;left:50%;transform:translateX(-50%);background:#fff;color:#1d1d1f;padding:8px 16px;border-radius:20px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none}
   .toast.show{opacity:1}
   .overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;padding:20px}
   .overlay.show{display:flex}
@@ -187,7 +190,10 @@ function handleMessage(msg) {
   } else if (msg.type === 'code_added') {
     codes.push(msg.code);
     renderAll();
-    showToast('Mã mới: ' + msg.code);
+    showToast(msg.code);
+  } else if (msg.type === 'code_removed') {
+    codes = codes.filter((c) => c !== msg.code);
+    renderAll();
   } else if (msg.type === 'list_cleared') {
     codes = [];
     renderAll();
@@ -209,7 +215,19 @@ function renderAll() {
   listEl.innerHTML = '';
   codes.forEach((code, i) => {
     const li = document.createElement('li');
-    li.innerHTML = '<span class="idx">' + (i + 1) + '.</span>' + code;
+    const left = document.createElement('span');
+    left.className = 'code-text';
+    left.innerHTML = '<span class="idx">' + (i + 1) + '.</span>' + code;
+    const delBtn = document.createElement('button');
+    delBtn.className = 'del-btn';
+    delBtn.textContent = '\\u2715';
+    delBtn.onclick = () => {
+      if (confirm('Xóa mã ' + code + '?')) {
+        ws.send(JSON.stringify({ type: 'delete_code', code }));
+      }
+    };
+    li.appendChild(left);
+    li.appendChild(delBtn);
     listEl.appendChild(li);
   });
 }
@@ -225,9 +243,12 @@ function showToast(text) {
 
 const input = document.getElementById('scanInput');
 function focusInput() { if (!closed) input.focus(); }
-input.addEventListener('blur', () => setTimeout(focusInput, 200));
-document.addEventListener('click', focusInput);
-focusInput();
+const isMobile = window.innerWidth < 768
+if (isMobile) {
+  input.addEventListener('blur', () => setTimeout(focusInput, 200));
+  document.addEventListener('click', focusInput);
+  focusInput();
+}
 
 input.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {

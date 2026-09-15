@@ -52,6 +52,16 @@ export class Room {
         await this.saveCodes();
       }
 
+      if (msg.type === "delete_code" && typeof msg.code === "string") {
+        await this.loadCodes();
+        const idx = this.codes.indexOf(msg.code);
+        if (idx !== -1) {
+          this.codes.splice(idx, 1);
+          this.broadcast({ type: "code_removed", code: msg.code });
+          await this.saveCodes();
+        }
+      }
+
       if (msg.type === "clear_list") {
         await this.loadCodes();
         this.codes = [];
