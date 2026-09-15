@@ -21,6 +21,23 @@ export class Room {
   }
 
   async fetch(request) {
+    const url = new URL(request.url);
+
+    if (url.pathname === "/claim" && request.method === "POST") {
+      const claimed = await this.state.storage.get("claimed");
+      if (claimed) {
+        return new Response(JSON.stringify({ ok: false }), {
+          status: 409,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      await this.state.storage.put("claimed", true);
+      await this.state.storage.setAlarm(Date.now() + ROOM_TTL_MS);
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+
     if (request.headers.get("Upgrade") !== "websocket") {
       return new Response("Expected websocket", { status: 400 });
     }
