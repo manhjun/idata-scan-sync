@@ -125,6 +125,11 @@ const LANDING_HTML = /* js */ `<!doctype html>
   .join-row button{width:auto;padding:11px 14px}
   .hint{font-size:10px;color:#999;text-align:left;margin-top:-2px}
   .error{font-size:12px;color:#ff3b30;text-align:left;min-height:14px}
+  .video-toggle{margin-top:14px;font-size:12px;color:#0071e3;background:none;border:none;font-weight:600;padding:6px;cursor:pointer}
+  .video-toggle:active{opacity:.7}
+  .video-box{display:none;margin-top:8px}
+  .video-box.show{display:block}
+  .video-box video{width:100%;border-radius:10px;display:block}
 </style>
 </head>
 <body>
@@ -146,8 +151,16 @@ const LANDING_HTML = /* js */ `<!doctype html>
     <input id="joinInput" placeholder="Mã phòng" maxlength="20" autocapitalize="characters" autocomplete="off">
     <button type="submit">Vào</button>
   </form>
+
+  <button type="button" class="video-toggle" id="videoToggle">▾ Hướng dẫn đổi chế độ scan trên iData</button>
+  <div class="video-box" id="videoBox">
+    <video src="/huong-dan-scan-mode.mp4" controls playsinline preload="none"></video>
+  </div>
 </div>
 <script>
+document.getElementById('videoToggle').onclick = () => {
+  document.getElementById('videoBox').classList.toggle('show');
+};
 const errorEl = document.getElementById('createError');
 
 function normalizeRoomId(raw) {
