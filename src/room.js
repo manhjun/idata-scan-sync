@@ -77,7 +77,10 @@ export class Room {
         const code = msg.code.trim();
         if (!code) return;
         await this.loadCodes();
-        if (this.codes.includes(code)) return; // silent dedupe — no broadcast, no feedback
+        if (this.codes.includes(code)) {
+          this.broadcast({ type: "code_duplicate", code });
+          return;
+        }
         this.codes.push(code);
         this.broadcast({ type: "code_added", code });
         await this.saveCodes();

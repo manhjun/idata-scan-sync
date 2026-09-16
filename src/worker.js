@@ -150,23 +150,35 @@ const LANDING_HTML = /* js */ `<!doctype html>
 <script>
 const errorEl = document.getElementById('createError');
 
-function sanitizeRoomInput(value) {
-  return value.replace(/\\s+/g, '-').replace(/[^A-Za-z0-9-]/g, '');
+function normalizeRoomId(raw) {
+  return raw
+    .normalize('NFD')
+    .replace(/[\\u0300-\\u036f]/g, '') // strip Vietnamese diacritics
+    .replace(/đ/gi, 'd')
+    .trim()
+    .toUpperCase()
+    .replace(/\\s+/g, '-')
+    .replace(/[^A-Z0-9-]/g, '')
+    .slice(0, 20);
 }
-function wireSanitize(el) {
-  el.addEventListener('input', () => {
+
+// Space always ends/commits a Vietnamese IME composition, so replacing it
+// live is safe — it can't cut off a diacritic mid-composition the way
+// filtering other characters did.
+function liveReplaceSpaces(el) {
+  el.addEventListener('input', (e) => {
+    if (e.isComposing) return;
+    if (!el.value.includes(' ')) return;
     const pos = el.selectionStart;
     const before = el.value;
-    const after = sanitizeRoomInput(before);
-    if (after !== before) {
-      el.value = after;
-      const diff = before.length - after.length;
-      el.setSelectionRange(pos - diff, pos - diff);
-    }
+    const after = before.replace(/ +/g, '-');
+    el.value = after;
+    const diff = before.length - after.length;
+    el.setSelectionRange(pos - diff, pos - diff);
   });
 }
-wireSanitize(document.getElementById('nameInput'));
-wireSanitize(document.getElementById('joinInput'));
+liveReplaceSpaces(document.getElementById('nameInput'));
+liveReplaceSpaces(document.getElementById('joinInput'));
 
 document.getElementById('createForm').onsubmit = async (e) => {
   e.preventDefault();
@@ -194,7 +206,7 @@ document.getElementById('createForm').onsubmit = async (e) => {
 
 document.getElementById('joinForm').onsubmit = (e) => {
   e.preventDefault();
-  const id = document.getElementById('joinInput').value.trim().toUpperCase();
+  const id = normalizeRoomId(document.getElementById('joinInput').value.trim());
   if (id) location.href = '/r/' + id;
 };
 </script>
@@ -238,7 +250,7 @@ const ROOM_HTML = /* js */ `<!doctype html>
   li .del-btn{background:none;border:none;color:#ff3b30;font-size:17px;line-height:1;padding:3px 6px;flex-shrink:0;user-select: none}
   li .del-btn:active{opacity:.6}
   .empty{text-align:center;color:#999;padding:18px;font-size:13px}
-  .toast{position:fixed;top:14px;left:50%;transform:translateX(-50%);background:#fff;color:#1d1d1f;padding:6px 14px;border-radius:18px;font-size:12px;opacity:0;transition:opacity .2s;pointer-events:none}
+  .toast{position:fixed;top:14px;left:50%;transform:translateX(-50%);background:#fff;color:#1d1d1f;padding:6px 14px;border-radius:18px;font-size:12px;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap;max-width:90vw;overflow:hidden;text-overflow:ellipsis}
   .toast.show{opacity:1}
   .overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;padding:20px}
   .overlay.show{display:flex}
@@ -330,6 +342,8 @@ function handleMessage(msg) {
     codes.unshift(msg.code);
     renderAll();
     showToast(msg.code);
+  } else if (msg.type === 'code_duplicate') {
+    showToast('Trùng đơn: ' + msg.code);
   } else if (msg.type === 'code_removed') {
     codes = codes.filter((c) => c !== msg.code);
     renderAll();
