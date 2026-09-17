@@ -51,6 +51,13 @@ export class Room {
       });
     }
 
+    if (url.pathname === "/exists" && request.method === "GET") {
+      const claimed = await this.state.storage.get("claimed");
+      return new Response(JSON.stringify({ exists: !!claimed }), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+
     if (request.headers.get("Upgrade") !== "websocket") {
       return new Response("Expected websocket", { status: 400 });
     }

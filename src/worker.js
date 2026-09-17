@@ -1,7 +1,7 @@
 import { Room } from './room.js';
 export { Room };
 
-const ROOM_ID_RE = /^[A-Z0-9-]{3,20}$/;
+const ROOM_ID_RE = /^[A-Z0-9-]{1,20}$/;
 
 function randomRoomId() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I to avoid confusion
@@ -71,12 +71,30 @@ export default {
       return json({ error: 'server_busy' }, 500);
     }
 
-    const roomPage = path.match(/^\/r\/([A-Za-z0-9-]{3,20})$/);
+    if (path === '/api/rooms/check' && request.method === 'POST') {
+      let body = {};
+      try {
+        body = await request.json();
+      } catch {
+        // no body / not JSON
+      }
+      const roomId = normalizeRoomId(body.name);
+      if (!ROOM_ID_RE.test(roomId)) {
+        return json({ error: 'invalid_name' }, 400);
+      }
+      const id = env.ROOMS.idFromName(roomId);
+      const stub = env.ROOMS.get(id);
+      const res = await stub.fetch('https://internal/exists');
+      const data = await res.json();
+      return json({ roomId, exists: !!data.exists });
+    }
+
+    const roomPage = path.match(/^\/r\/([A-Za-z0-9-]{1,20})$/);
     if (roomPage && ROOM_ID_RE.test(roomPage[1].toUpperCase())) {
       return html(ROOM_HTML);
     }
 
-    const roomWs = path.match(/^\/r\/([A-Za-z0-9-]{3,20})\/ws$/);
+    const roomWs = path.match(/^\/r\/([A-Za-z0-9-]{1,20})\/ws$/);
     if (roomWs && ROOM_ID_RE.test(roomWs[1].toUpperCase())) {
       const roomId = roomWs[1].toUpperCase();
       const id = env.ROOMS.idFromName(roomId);
@@ -139,7 +157,7 @@ const LANDING_HTML = /* js */ `<!doctype html>
   <h2>Tạo phòng mới</h2>
   <form id="createForm">
     <input id="nameInput" placeholder="Tên phòng (để trống = ngẫu nhiên)" maxlength="20" autocapitalize="characters" autocomplete="off">
-    <div class="hint">Chỉ dùng chữ, số hoặc -, từ 3-20 ký tự</div>
+    <div class="hint">Chỉ dùng chữ, số hoặc -, từ 1-20 ký tự</div>
     <div class="error" id="createError"></div>
     <button type="submit">Tạo phòng</button>
   </form>
@@ -151,6 +169,7 @@ const LANDING_HTML = /* js */ `<!doctype html>
     <input id="joinInput" placeholder="Mã phòng" maxlength="20" autocapitalize="characters" autocomplete="off">
     <button type="submit">Vào</button>
   </form>
+  <div class="error" id="joinError"></div>
 
   <button type="button" class="video-toggle" id="videoToggle">▾ Hướng dẫn đổi chế độ scan trên iData</button>
   <div class="video-box" id="videoBox">
@@ -211,16 +230,39 @@ document.getElementById('createForm').onsubmit = async (e) => {
   if (data.error === 'name_taken') {
     errorEl.textContent = 'Tên phòng này đã được dùng, hãy chọn tên khác.';
   } else if (data.error === 'invalid_name') {
-    errorEl.textContent = 'Tên phòng không hợp lệ (chữ, số, - hoặc _, từ 3-20 ký tự).';
+    errorEl.textContent = 'Tên phòng không hợp lệ (chữ, số hoặc -, từ 1-20 ký tự).';
   } else {
     errorEl.textContent = 'Có lỗi xảy ra, thử lại nhé.';
   }
 };
 
-document.getElementById('joinForm').onsubmit = (e) => {
+const joinErrorEl = document.getElementById('joinError');
+document.getElementById('joinForm').onsubmit = async (e) => {
   e.preventDefault();
+  joinErrorEl.textContent = '';
   const id = normalizeRoomId(document.getElementById('joinInput').value.trim());
-  if (id) location.href = '/r/' + id;
+  if (!id) return;
+  const btn = e.target.querySelector('button');
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/rooms/check', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: id }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.exists) {
+      location.href = '/r/' + id;
+      return;
+    } else if (res.ok && !data.exists) {
+      joinErrorEl.textContent = 'Không tìm thấy phòng này — kiểm tra lại mã phòng.';
+    } else {
+      joinErrorEl.textContent = 'Mã phòng không hợp lệ.';
+    }
+  } catch {
+    joinErrorEl.textContent = 'Có lỗi xảy ra, thử lại nhé.';
+  }
+  btn.disabled = false;
 };
 </script>
 </body>
@@ -238,13 +280,15 @@ const ROOM_HTML = /* js */ `<!doctype html>
   header .info{display:flex;align-items:center;justify-content:center;gap:10px}
   header .room-id{font-size:19px;font-weight:700;letter-spacing:2px}
   header .status{font-size:11px;opacity:.7;margin-top:1px}
-  header .close-btn{background:#ff3b30;color:#fff;border:none;border-radius:8px;padding:6px 10px;font-size:12px;white-space:nowrap}
+  header .close-btn{background:#ff3b30;color:#fff;border:none;border-radius:8px;padding:6px 10px;font-size:12px;white-space:nowrap;cursor:pointer}
   header .close-btn:active{opacity:.7}
+  header .home-btn{background:rgba(255,255,255,.15);color:#fff;border:none;border-radius:8px;padding:6px 10px;font-size:12px;white-space:nowrap;text-decoration:none}
+  header .home-btn:active{opacity:.7}
   .scan-box{padding:12px}
   #scanInput{width:100%;box-sizing:border-box;font-size:18px;padding:12px;border-radius:10px;border:2px solid #ccc;text-align:center}
   #scanInput:focus{border-color:#0071e3;outline:none}
   .toolbar{display:flex;gap:6px;padding:0 12px 10px}
-  .toolbar button{flex:1;font-size:13px;padding:8px;border-radius:9px;border:1.5px solid #ccc;background:#fff;color:#1d1d1f;font-weight:600}
+  .toolbar button{flex:1;font-size:13px;padding:8px;border-radius:9px;border:1.5px solid #ccc;background:#fff;color:#1d1d1f;font-weight:600;cursor:pointer}
   .toolbar button:active{opacity:.7}
   .toolbar button.danger{border-color:#ff3b30;color:#ff3b30}
   .count{padding:0 12px 6px;font-size:11px;color:#888}
@@ -278,6 +322,7 @@ const ROOM_HTML = /* js */ `<!doctype html>
 </head>
 <body>
 <header>
+  <a class="home-btn" href="/">Trang chủ</a>
   <div class="info">
     <div class="room-id" id="roomIdLabel"></div>
     <div class="status" id="wsStatus">Đang kết nối...</div>
@@ -305,6 +350,12 @@ const ROOM_HTML = /* js */ `<!doctype html>
     <a href="/">Về trang chủ</a>
   </div>
 </div>
+<div class="overlay" id="notFoundOverlay">
+  <div class="card">
+    <p>Không tìm thấy phòng này — có thể đã hết hạn, bị đóng, hoặc mã phòng sai.</p>
+    <a href="/">Về trang chủ</a>
+  </div>
+</div>
 <div class="overlay" id="confirmOverlay">
   <div class="card">
     <p id="confirmText"></p>
@@ -318,6 +369,7 @@ const ROOM_HTML = /* js */ `<!doctype html>
 <script>
 const roomId = location.pathname.split('/')[2];
 document.getElementById('roomIdLabel').textContent = roomId;
+document.title = roomId;
 
 const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
 let ws;
@@ -548,7 +600,26 @@ document.getElementById('closeBtn').onclick = async () => {
 
 renderAll();
 renderHistory();
-connect();
+
+fetch('/api/rooms/check', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ name: roomId }),
+})
+  .then((res) => res.json())
+  .then((data) => {
+    if (data.exists) {
+      connect();
+    } else {
+      closed = true;
+      document.getElementById('notFoundOverlay').classList.add('show');
+      document.getElementById('scanInput').disabled = true;
+    }
+  })
+  .catch(() => {
+    // Network hiccup on the check itself — don't block the user, just try to connect anyway.
+    connect();
+  });
 </script>
 </body>
 </html>`;
