@@ -131,7 +131,8 @@ const LANDING_HTML = /* js */ `<!doctype html>
   .wrap{background:#fff;border-radius:14px;padding:22px 20px;box-shadow:0 2px 12px rgba(0,0,0,.08);width:min(320px,90vw);text-align:center}
   h1{font-size:17px;margin:0 0 16px}
   h2{font-size:12px;color:#888;text-align:left;margin:0 0 6px;font-weight:600}
-  button{width:100%;font-size:14px;padding:11px;border-radius:10px;border:none;background:#0071e3;color:#fff;font-weight:600}
+  button{width:100%;font-size:14px;padding:11px;border-radius:10px;border:none;background:#0071e3;color:#fff;font-weight:600;cursor:pointer;transition:opacity .15s}
+  button:hover{opacity:.9}
   button:active{opacity:.8}
   .divider{margin:12px 0;color:#999;font-size:12px}
   form{display:flex;flex-direction:column;gap:6px}
@@ -143,7 +144,8 @@ const LANDING_HTML = /* js */ `<!doctype html>
   .join-row button{width:auto;padding:11px 14px}
   .hint{font-size:10px;color:#999;text-align:left;margin-top:-2px}
   .error{font-size:12px;color:#ff3b30;text-align:left;min-height:14px}
-  .video-toggle{margin-top:14px;font-size:12px;color:#0071e3;background:none;border:none;font-weight:600;padding:6px;cursor:pointer}
+  .video-toggle{margin-top:14px;font-size:12px;color:#0071e3;background:none;border:none;font-weight:600;padding:6px;cursor:pointer;transition:opacity .15s}
+  .video-toggle:hover{opacity:.7}
   .video-toggle:active{opacity:.7}
   .video-box{display:none;margin-top:8px}
   .video-box.show{display:block}
@@ -277,21 +279,28 @@ const ROOM_HTML = /* js */ `<!doctype html>
 <style>
   body{font-family:system-ui,-apple-system,sans-serif;margin:0;background:#f5f5f7;color:#1d1d1f}
   header{position:sticky;top:0;background:#1d1d1f;color:#fff;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px}
-  header .info{display:flex;align-items:center;justify-content:center;gap:10px}
+  header .info{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:10px}
   header .room-id{font-size:19px;font-weight:700;letter-spacing:2px}
-  header .status{font-size:11px;opacity:.7;margin-top:1px}
-  header .close-btn{background:#ff3b30;color:#fff;border:none;border-radius:8px;padding:6px 10px;font-size:12px;white-space:nowrap;cursor:pointer}
+  header .status{font-size:12px;margin-top:2px;display:flex;align-items:center;justify-content:center;gap:5px}
+  header .status-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:#8e8e93;transition:background .2s}
+  header .status-dot.connecting{background:#ff9500}
+  header .status-dot.connected{background:#34c759}
+  header .status-dot.disconnected{background:#ff3b30}
+  header .close-btn{background:#ff3b30;color:#fff;border:none;border-radius:8px;padding:6px 10px;font-size:12px;white-space:nowrap;cursor:pointer;transition:opacity .15s}
+  header .close-btn:hover{opacity:.85}
   header .close-btn:active{opacity:.7}
-  header .home-btn{background:rgba(255,255,255,.15);color:#fff;border:none;border-radius:8px;padding:6px 10px;font-size:12px;white-space:nowrap;text-decoration:none}
+  header .home-btn{background:rgba(255,255,255,.15);color:#fff;border:none;border-radius:8px;padding:6px 10px;font-size:12px;white-space:nowrap;text-decoration:none;cursor:pointer;transition:opacity .15s}
+  header .home-btn:hover{opacity:.85}
   header .home-btn:active{opacity:.7}
   .scan-box{padding:12px}
   #scanInput{width:100%;box-sizing:border-box;font-size:18px;padding:12px;border-radius:10px;border:2px solid #ccc;text-align:center}
   #scanInput:focus{border-color:#0071e3;outline:none}
   .toolbar{display:flex;gap:6px;padding:0 12px 10px}
-  .toolbar button{flex:1;font-size:13px;padding:8px;border-radius:9px;border:1.5px solid #ccc;background:#fff;color:#1d1d1f;font-weight:600;cursor:pointer}
+  .toolbar button{flex:1;font-size:13px;padding:8px;border-radius:9px;border:1.5px solid #ccc;background:#fff;color:#1d1d1f;font-weight:600;cursor:pointer;transition:opacity .15s,background .15s}
+  .toolbar button:hover{background:#f0f0f0}
   .toolbar button:active{opacity:.7}
   .toolbar button.danger{border-color:#ff3b30;color:#ff3b30}
-  .count{padding:0 12px 6px;font-size:11px;color:#888}
+  .count{padding:0 12px 6px;font-size:11px;color:#888;min-height:14px}
   ul#list{list-style:none;margin:0;padding:0 12px 12px}
   .history-toggle{margin:4px 12px 8px;padding:8px 10px;background:#eee;border-radius:9px;font-size:12px;color:#666;display:flex;justify-content:space-between;align-items:center}
   .history-toggle:active{opacity:.7}
@@ -299,23 +308,36 @@ const ROOM_HTML = /* js */ `<!doctype html>
   .history-toggle.open .chev{transform:rotate(180deg)}
   ul#historyList{list-style:none;margin:0 12px 12px;padding:0;display:none}
   ul#historyList.show{display:block}
-  ul#historyList li{display:block;background:#f0f0f0;color:#888;border-radius:9px;padding:8px 11px;margin-bottom:5px;font-size:13px;font-weight:500}
-  ul#historyList li .idx{color:#bbb;font-weight:400;margin-right:6px}
+  .history-group{margin-bottom:10px}
+  .history-group:last-child{margin-bottom:0}
+  .history-group-head{font-size:11px;color:#999;font-weight:600;padding:0 2px 5px;display:flex;align-items:center;gap:8px}
+  .history-group-label{overflow-wrap:anywhere}
+  .history-copy-btn{flex-shrink:0;background:none;border:none;color:#0071e3;font-size:11px;font-weight:600;padding:3px 4px;cursor:pointer;transition:opacity .15s}
+  .history-copy-btn:hover{opacity:.7}
+  .history-copy-btn:active{opacity:.6}
+  ul.history-group-list{list-style:none;margin:0;padding:0}
+  ul.history-group-list li{display:block;background:#f0f0f0;color:#888;border-radius:9px;padding:8px 11px;margin-bottom:5px;font-size:13px;font-weight:500}
+  ul.history-group-list li .idx{color:#bbb;font-weight:400;margin-right:6px}
   li{background:#fff;border-radius:9px;padding:9px 11px;margin-bottom:6px;font-weight:600;font-size:14px;box-shadow:0 1px 2px rgba(0,0,0,.06);display:flex;align-items:center;justify-content:space-between;gap:8px}
+  @keyframes flashHighlight{0%{background:#fff3b0;box-shadow:0 1px 2px rgba(0,0,0,.06),0 0 0 1.5px #ffd60a}100%{background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.06)}}
+  li.flash{animation:flashHighlight 1.1s ease-out}
   li .idx{color:#aaa;font-weight:400;margin-right:6px;user-select: none}
   li .code-text{flex:1;overflow-wrap:anywhere}
-  li .del-btn{background:none;border:none;color:#ff3b30;font-size:17px;line-height:1;padding:3px 6px;flex-shrink:0;user-select: none}
+  li .del-btn{background:none;border:none;color:#ff3b30;font-size:17px;line-height:1;padding:3px 6px;flex-shrink:0;user-select: none;cursor:pointer;transition:opacity .15s}
+  li .del-btn:hover{opacity:.7}
   li .del-btn:active{opacity:.6}
   .empty{text-align:center;color:#999;padding:18px;font-size:13px}
-  .toast{position:fixed;top:14px;left:50%;transform:translateX(-50%);background:#fff;color:#1d1d1f;padding:6px 14px;border-radius:18px;font-size:12px;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap;max-width:90vw;overflow:hidden;text-overflow:ellipsis}
+  .toast{position:fixed;top:calc(var(--header-h, 54px) + 22px);left:50%;transform:translateX(-50%);background:#1d1d1f;color:#fff;padding:6px 14px;border-radius:18px;font-size:12px;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap;max-width:90vw;overflow:hidden;text-overflow:ellipsis;z-index:20}
   .toast.show{opacity:1}
   .overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;padding:20px}
   .overlay.show{display:flex}
   .overlay .card{background:#fff;border-radius:14px;padding:22px;text-align:center;max-width:280px}
   .overlay .card p{margin:0 0 14px;font-size:14px}
-  .overlay .card a{display:inline-block;background:#0071e3;color:#fff;text-decoration:none;padding:10px 18px;border-radius:9px;font-weight:600;font-size:14px}
+  .overlay .card a{display:inline-block;background:#0071e3;color:#fff;text-decoration:none;padding:10px 18px;border-radius:9px;font-weight:600;font-size:14px;cursor:pointer;transition:opacity .15s}
+  .overlay .card a:hover{opacity:.9}
   .confirm-actions{display:flex;gap:8px}
-  .confirm-actions button{flex:1;border:none;border-radius:9px;padding:10px;font-weight:600;font-size:14px}
+  .confirm-actions button{flex:1;border:none;border-radius:9px;padding:10px;font-weight:600;font-size:14px;cursor:pointer;transition:opacity .15s}
+  .confirm-actions button:hover{opacity:.85}
   .confirm-actions .cancel-btn{background:#eee;color:#1d1d1f}
   .confirm-actions .ok-btn{background:#ff3b30;color:#fff}
 </style>
@@ -325,7 +347,10 @@ const ROOM_HTML = /* js */ `<!doctype html>
   <a class="home-btn" href="/">Trang chủ</a>
   <div class="info">
     <div class="room-id" id="roomIdLabel"></div>
-    <div class="status" id="wsStatus">Đang kết nối...</div>
+    <div class="status" id="wsStatus">
+      <span class="status-dot" id="statusDot"></span>
+      <span id="statusCount">0 mã</span>
+    </div>
   </div>
   <button class="close-btn" id="closeBtn">Đóng phòng</button>
 </header>
@@ -371,6 +396,13 @@ const roomId = location.pathname.split('/')[2];
 document.getElementById('roomIdLabel').textContent = roomId;
 document.title = roomId;
 
+const headerEl = document.querySelector('header');
+function updateHeaderHeight() {
+  document.documentElement.style.setProperty('--header-h', headerEl.offsetHeight + 'px');
+}
+updateHeaderHeight();
+window.addEventListener('resize', updateHeaderHeight);
+
 const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
 let ws;
 let reconnectDelay = 1000;
@@ -378,8 +410,8 @@ let closed = false;
 
 function connect() {
   ws = new WebSocket(proto + '//' + location.host + '/r/' + roomId + '/ws');
-  ws.onopen = () => { setStatus('Đã kết nối'); reconnectDelay = 1000; };
-  ws.onclose = () => { if (!closed) { setStatus('Mất kết nối, đang thử lại...'); scheduleReconnect(); } };
+  ws.onopen = () => { setStatus('connected'); reconnectDelay = 1000; };
+  ws.onclose = () => { if (!closed) { setStatus('disconnected'); scheduleReconnect(); } };
   ws.onerror = () => ws.close();
   ws.onmessage = (event) => handleMessage(JSON.parse(event.data));
 }
@@ -387,30 +419,48 @@ function scheduleReconnect() {
   setTimeout(connect, reconnectDelay);
   reconnectDelay = Math.min(reconnectDelay * 1.5, 10000);
 }
-function setStatus(text) { document.getElementById('wsStatus').textContent = text; }
+const statusLabels = { connecting: 'Đang kết nối...', connected: 'Đã kết nối', disconnected: 'Mất kết nối, đang thử lại...' };
+const statusDotEl = document.getElementById('statusDot');
+const statusEl = document.getElementById('wsStatus');
+function setStatus(state) {
+  statusDotEl.className = 'status-dot ' + state;
+  statusEl.title = statusLabels[state] || '';
+}
+setStatus('connecting');
 
 let codes = [];
 let history = [];
+let justAddedCode = null;
+let justAddedTimer;
 const listEl = document.getElementById('list');
 const countEl = document.getElementById('countLabel');
+const statusCountEl = document.getElementById('statusCount');
 const historyListEl = document.getElementById('historyList');
 const historyCountEl = document.getElementById('historyCount');
 const historyToggleEl = document.getElementById('historyToggle');
 
+function formatTime(ts) {
+  if (!ts) return '';
+  return new Date(ts).toLocaleTimeString('vi-VN', { hour12: false });
+}
+
 function handleMessage(msg) {
   if (msg.type === 'init') {
     codes = msg.codes.slice().reverse(); // newest first
-    history = (msg.history || []).slice().reverse();
+    history = (msg.history || []).slice().reverse(); // newest batch first
     renderAll();
     renderHistory();
   } else if (msg.type === 'code_added') {
-    codes.unshift(msg.code);
+    codes.unshift(msg.entry);
+    justAddedCode = msg.entry.code;
+    clearTimeout(justAddedTimer);
+    justAddedTimer = setTimeout(() => { justAddedCode = null; }, 1100);
     renderAll();
-    showToast(msg.code);
+    showToast(msg.entry.code);
   } else if (msg.type === 'code_duplicate') {
     showToast('Trùng đơn: ' + msg.code);
   } else if (msg.type === 'code_removed') {
-    codes = codes.filter((c) => c !== msg.code);
+    codes = codes.filter((c) => c.code !== msg.code);
     renderAll();
     if (isMobile) focusHiddenKeyboard();
   } else if (msg.type === 'list_cleared') {
@@ -422,6 +472,7 @@ function handleMessage(msg) {
     if (isMobile) focusHiddenKeyboard();
   } else if (msg.type === 'room_closed') {
     closed = true;
+    setStatus('disconnected');
     document.getElementById('overlay').classList.add('show');
     document.getElementById('scanInput').disabled = true;
     ws.close();
@@ -429,12 +480,46 @@ function handleMessage(msg) {
 }
 
 function renderHistory() {
-  historyCountEl.textContent = history.length;
+  const totalCount = history.reduce((sum, batch) => sum + batch.codes.length, 0);
+  historyCountEl.textContent = totalCount;
   historyListEl.innerHTML = '';
-  history.forEach((code, i) => {
-    const li = document.createElement('li');
-    li.innerHTML = '<span class="idx">' + (i + 1) + '.</span>' + code;
-    historyListEl.appendChild(li);
+  if (history.length === 0) {
+    historyListEl.innerHTML = '<div class="empty">Chưa có danh sách nào bị xóa</div>';
+    return;
+  }
+  history.forEach((batch) => {
+    const group = document.createElement('div');
+    group.className = 'history-group';
+    const head = document.createElement('div');
+    head.className = 'history-group-head';
+    const label = document.createElement('span');
+    label.className = 'history-group-label';
+    label.textContent = formatTime(batch.time) + ' · ' + batch.codes.length + ' mã';
+    const copyBatchBtn = document.createElement('button');
+    copyBatchBtn.type = 'button';
+    copyBatchBtn.className = 'history-copy-btn';
+    copyBatchBtn.textContent = 'Copy';
+    copyBatchBtn.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(batch.codes.map((c) => c.code).join('\\n'));
+        showToast('Đã copy ' + batch.codes.length + ' mã');
+      } catch {
+        showToast('Không copy được, hãy copy thủ công');
+      }
+      if (isMobile) focusHiddenKeyboard();
+    };
+    head.appendChild(label);
+    head.appendChild(copyBatchBtn);
+    group.appendChild(head);
+    const ul = document.createElement('ul');
+    ul.className = 'history-group-list';
+    batch.codes.slice().reverse().forEach((entry, i) => {
+      const li = document.createElement('li');
+      li.innerHTML = '<span class="idx">' + (i + 1) + '.</span>' + entry.code;
+      ul.appendChild(li);
+    });
+    group.appendChild(ul);
+    historyListEl.appendChild(group);
   });
 }
 
@@ -444,14 +529,18 @@ historyToggleEl.onclick = () => {
 };
 
 function renderAll() {
-  countEl.textContent = codes.length + ' mã';
+  statusCountEl.textContent = codes.length + ' mã';
+  countEl.textContent = codes.length ? 'Quét lúc ' + formatTime(codes[0].time) : '';
+  updateHeaderHeight();
   if (codes.length === 0) {
     listEl.innerHTML = '<div class="empty">Chưa có mã nào được quét</div>';
     return;
   }
   listEl.innerHTML = '';
-  codes.forEach((code, i) => {
+  codes.forEach((entry, i) => {
+    const code = entry.code;
     const li = document.createElement('li');
+    if (code === justAddedCode) li.classList.add('flash');
     const left = document.createElement('span');
     left.className = 'code-text';
     left.innerHTML = '<span class="idx">' + (i + 1) + '.</span>' + code;
@@ -575,7 +664,7 @@ input.addEventListener('keydown', (e) => {
 document.getElementById('copyBtn').onclick = async () => {
   if (codes.length === 0) { showToast('Danh sách trống'); return; }
   try {
-    await navigator.clipboard.writeText(codes.join('\\n'));
+    await navigator.clipboard.writeText(codes.map((c) => c.code).join('\\n'));
     showToast('Đã copy ' + codes.length + ' mã');
   } catch {
     showToast('Không copy được, hãy copy thủ công');

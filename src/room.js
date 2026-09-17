@@ -5,13 +5,15 @@ export class Room {
     this.state = state;
     this.env = env;
     this.sessions = [];
-    this.codes = null; // array of strings, lazy-loaded from durable storage
-    this.history = null; // array of strings previously cleared, lazy-loaded
+    this.codes = null; // array of {code, time}, lazy-loaded from durable storage
+    this.history = null; // array of {time, codes: [{code, time}]} batches, lazy-loaded
   }
 
   async loadCodes() {
     if (this.codes === null) {
-      this.codes = (await this.state.storage.get("codes")) || [];
+      const raw = (await this.state.storage.get("codes")) || [];
+      // Legacy rooms stored plain strings before scan timestamps were added.
+      this.codes = raw.map((item) => (typeof item === "string" ? { code: item, time: 0 } : item));
     }
     return this.codes;
   }
@@ -23,7 +25,19 @@ export class Room {
 
   async loadHistory() {
     if (this.history === null) {
-      this.history = (await this.state.storage.get("history")) || [];
+      const raw = (await this.state.storage.get("history")) || [];
+      if (raw.length > 0 && typeof raw[0] === "string") {
+        // Legacy rooms stored a single flat array of code strings.
+        this.history = [{ time: 0, codes: raw.map((code) => ({ code, time: 0 })) }];
+      } else {
+        // Already batched; normalize any legacy string entries inside each batch.
+        this.history = raw.map((batch) => ({
+          time: batch.time || 0,
+          codes: (batch.codes || []).map((item) =>
+            typeof item === "string" ? { code: item, time: 0 } : item
+          ),
+        }));
+      }
     }
     return this.history;
   }
@@ -84,18 +98,19 @@ export class Room {
         const code = msg.code.trim();
         if (!code) return;
         await this.loadCodes();
-        if (this.codes.includes(code)) {
+        if (this.codes.some((c) => c.code === code)) {
           this.broadcast({ type: "code_duplicate", code });
           return;
         }
-        this.codes.push(code);
-        this.broadcast({ type: "code_added", code });
+        const entry = { code, time: Date.now() };
+        this.codes.push(entry);
+        this.broadcast({ type: "code_added", entry });
         await this.saveCodes();
       }
 
       if (msg.type === "delete_code" && typeof msg.code === "string") {
         await this.loadCodes();
-        const idx = this.codes.indexOf(msg.code);
+        const idx = this.codes.findIndex((c) => c.code === msg.code);
         if (idx !== -1) {
           this.codes.splice(idx, 1);
           this.broadcast({ type: "code_removed", code: msg.code });
@@ -107,7 +122,11 @@ export class Room {
         await this.loadCodes();
         await this.loadHistory();
         if (this.codes.length > 0) {
-          this.history = this.history.concat(this.codes);
+          const batch = {
+            time: this.codes[this.codes.length - 1].time, // scan time of the last code in this batch
+            codes: this.codes,
+          };
+          this.history.push(batch);
           this.codes = [];
           this.broadcast({ type: "list_cleared", history: this.history });
           await this.saveCodes();
@@ -127,6 +146,12 @@ export class Room {
         this.sessions = [];
         await this.state.storage.deleteAll();
         await this.state.storage.deleteAlarm();
+        // Reset in-memory caches too — otherwise this Durable Object instance
+        // could keep serving the stale pre-close data (from loadCodes/loadHistory's
+        // "already loaded" check) to any request that reaches it before Cloudflare
+        // evicts it from memory.
+        this.codes = [];
+        this.history = [];
       }
     });
 
