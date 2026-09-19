@@ -278,11 +278,12 @@ const ROOM_HTML = /* js */ `<!doctype html>
 <title>iData Scan Sync</title>
 <style>
   body{font-family:system-ui,-apple-system,sans-serif;margin:0;background:#f5f5f7;color:#1d1d1f}
-  header{position:sticky;top:0;background:#1d1d1f;color:#fff;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px}
-  header .info{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:10px}
-  header .room-id{font-size:19px;font-weight:700;letter-spacing:2px}
-  header .status{font-size:12px;margin-top:2px;display:flex;align-items:center;justify-content:center;gap:5px}
-  header .status-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:#8e8e93;transition:background .2s}
+  header{position:sticky;top:0;background:#1d1d1f;color:#fff;padding:8px 14px 10px;display:flex;flex-direction:column;gap:6px}
+  header .room-id{font-size:clamp(15px,5.4vw,19px);font-weight:700;letter-spacing:2px;overflow-wrap:anywhere;text-wrap:balance;text-align:center}
+  header .room-tail{white-space:nowrap}
+  header .bar{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  header .status-count{font-size:12px;flex:1;min-width:0;text-align:center}
+  header .status-dot{display:inline-block;vertical-align:middle;width:8px;height:8px;margin-left:8px;border-radius:50%;background:#8e8e93;transition:background .2s}
   header .status-dot.connecting{background:#ff9500}
   header .status-dot.connected{background:#34c759}
   header .status-dot.disconnected{background:#ff3b30}
@@ -346,15 +347,12 @@ const ROOM_HTML = /* js */ `<!doctype html>
 </head>
 <body>
 <header>
-  <a class="home-btn" href="/">Trang chủ</a>
-  <div class="info">
-    <div class="room-id" id="roomIdLabel"></div>
-    <div class="status" id="wsStatus">
-      <span class="status-dot" id="statusDot"></span>
-      <span id="statusCount">0 mã</span>
-    </div>
+  <div class="room-id" id="wsStatus"><span id="roomIdHead"></span><span class="room-tail"><span id="roomIdLast"></span><span class="status-dot" id="statusDot"></span></span></div>
+  <div class="bar">
+    <a class="home-btn" href="/">Trang chủ</a>
+    <div class="status-count" id="statusCount">0 mã</div>
+    <button class="close-btn" id="closeBtn">Đóng phòng</button>
   </div>
-  <button class="close-btn" id="closeBtn">Đóng phòng</button>
 </header>
 <div class="scan-box">
   <input id="scanInput" placeholder="Quét mã tại đây" autocomplete="off" autocorrect="off" autocapitalize="characters">
@@ -395,7 +393,10 @@ const ROOM_HTML = /* js */ `<!doctype html>
 
 <script>
 const roomId = location.pathname.split('/')[2];
-document.getElementById('roomIdLabel').textContent = roomId;
+// The last character lives in a nowrap span together with the status dot, so the dot
+// always stays on the same line as the end of the room name, even if the name wraps.
+document.getElementById('roomIdHead').textContent = roomId.slice(0, -1);
+document.getElementById('roomIdLast').textContent = roomId.slice(-1);
 document.title = roomId;
 
 const headerEl = document.querySelector('header');
