@@ -94,18 +94,49 @@ export class Room {
         return;
       }
 
+      if (msg.type === "ping") {
+        this.send(server, { type: "pong" });
+        return;
+      }
+
       if (msg.type === "scan" && typeof msg.code === "string") {
         const code = msg.code.trim();
-        if (!code) return;
-        await this.loadCodes();
-        if (this.codes.some((c) => c.code === code)) {
-          this.broadcast({ type: "code_duplicate", code });
+        // Client-generated id lets a resend (after a lost connection) be recognised.
+        const id = typeof msg.id === "string" && msg.id ? msg.id.slice(0, 64) : null;
+        if (!code) {
+          if (id) this.send(server, { type: "ack", id });
           return;
         }
-        const entry = { code, time: Date.now() };
+        await this.loadCodes();
+        await this.loadHistory();
+
+        // Already stored (the ack was lost, client is retrying) -> just ack again.
+        if (
+          id &&
+          (this.codes.some((c) => c.id === id) ||
+            this.history.some((b) => b.codes.some((c) => c.id === id)))
+        ) {
+          this.send(server, { type: "ack", id });
+          return;
+        }
+
+        if (this.codes.some((c) => c.code === code)) {
+          this.broadcast({ type: "code_duplicate", code });
+          if (id) this.send(server, { type: "ack", id, duplicate: true });
+          return;
+        }
+
+        // Keep the time the code was actually scanned (matters for codes queued
+        // offline), but don't trust absurd values.
+        const now = Date.now();
+        const t = Number(msg.time);
+        const time = Number.isFinite(t) && t > now - 7 * 24 * 60 * 60 * 1000 && t <= now + 60 * 1000 ? t : now;
+        const entry = id ? { code, time, id } : { code, time };
         this.codes.push(entry);
         this.broadcast({ type: "code_added", entry });
         await this.saveCodes();
+        // Ack only after the code is durably stored.
+        if (id) this.send(server, { type: "ack", id });
       }
 
       if (msg.type === "delete_code" && typeof msg.code === "string") {
@@ -162,6 +193,14 @@ export class Room {
     server.addEventListener("error", cleanup);
 
     return new Response(null, { status: 101, webSocket: client });
+  }
+
+  send(ws, msg) {
+    try {
+      ws.send(JSON.stringify(msg));
+    } catch {
+      // socket already gone
+    }
   }
 
   broadcast(msg) {

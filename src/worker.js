@@ -326,6 +326,8 @@ const ROOM_HTML = /* js */ `<!doctype html>
   li .del-btn{background:none;border:none;color:#ff3b30;font-size:17px;line-height:1;padding:3px 6px;flex-shrink:0;user-select: none;cursor:pointer;transition:opacity .15s}
   li .del-btn:hover{opacity:.7}
   li .del-btn:active{opacity:.6}
+  li.pending{background:#fff8e1;box-shadow:0 0 0 1.5px #ffcc00 inset}
+  .pending-tag{font-size:11px;color:#b58100;font-weight:600;flex-shrink:0}
   .empty{text-align:center;color:#999;padding:18px;font-size:13px}
   .toast{position:fixed;top:calc(var(--header-h, 54px) + 22px);left:50%;transform:translateX(-50%);background:#1d1d1f;color:#fff;padding:6px 14px;border-radius:18px;font-size:12px;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap;max-width:90vw;overflow:hidden;text-overflow:ellipsis;z-index:20}
   .toast.show{opacity:1}
@@ -406,19 +408,161 @@ window.addEventListener('resize', updateHeaderHeight);
 const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
 let ws;
 let reconnectDelay = 1000;
+let reconnectTimer = null;
+let hbTimer = null;
+let lastRecv = 0;
 let closed = false;
+let started = false; // set once the room-exists check has passed
 
+// ---- Outbox: scans that the server has not acknowledged yet -----------------
+// Persisted in localStorage so they survive a dropped connection, a page reload
+// or the browser killing the tab. An item is removed only when the server acks it.
+const OUTBOX_KEY = 'iscan-outbox-' + roomId;
+const OUTBOX_MAX_AGE = 24 * 60 * 60 * 1000; // same as the room's inactivity TTL
+const sentAt = {}; // id -> last send time (memory only)
+
+function loadOutbox() {
+  try {
+    const a = JSON.parse(localStorage.getItem(OUTBOX_KEY) || '[]');
+    if (!Array.isArray(a)) return [];
+    return a.filter((o) => o && o.id && o.code && Date.now() - o.time < OUTBOX_MAX_AGE);
+  } catch {
+    return [];
+  }
+}
+function saveOutbox() {
+  try {
+    if (outbox.length) localStorage.setItem(OUTBOX_KEY, JSON.stringify(outbox));
+    else localStorage.removeItem(OUTBOX_KEY);
+  } catch {
+    // storage full / blocked: still works in memory for this session
+  }
+}
+let outbox = loadOutbox();
+
+function newId() {
+  return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+}
+function isOpen() {
+  return !!ws && ws.readyState === WebSocket.OPEN;
+}
+function safeSend(obj) {
+  if (!isOpen()) { showToast('Chưa kết nối, thử lại sau'); return false; }
+  try { ws.send(JSON.stringify(obj)); return true; } catch { return false; }
+}
+function flushOutbox(force) {
+  if (!isOpen()) return;
+  const now = Date.now();
+  for (const item of outbox) {
+    // don't re-send something that was sent a moment ago and is probably still in flight
+    if (!force && sentAt[item.id] && now - sentAt[item.id] < 8000) continue;
+    try {
+      ws.send(JSON.stringify({ type: 'scan', id: item.id, code: item.code, time: item.time }));
+      sentAt[item.id] = now;
+    } catch {
+      return;
+    }
+  }
+}
+function removeFromOutbox(id, silent) {
+  const before = outbox.length;
+  outbox = outbox.filter((o) => o.id !== id);
+  delete sentAt[id];
+  if (outbox.length !== before) { saveOutbox(); if (!silent) renderAll(); }
+}
+// Only surface "pending" rows when something is actually wrong (offline, or no ack
+// for a while). On a healthy connection the ack comes back in milliseconds and a
+// pending row would just flash in and out and make the list jump.
+const PENDING_SHOW_DELAY = 1500;
+function visiblePending() {
+  const now = Date.now();
+  return outbox.filter((o) => !isOpen() || now - o.time > PENDING_SHOW_DELAY);
+}
+function submitScan(code) {
+  // Same code already waiting to be sent -> don't queue it twice.
+  // While offline, also check the (possibly stale) local list; online, the server decides.
+  if (outbox.some((o) => o.code === code) || (!isOpen() && codes.some((c) => c.code === code))) {
+    showToast('Trùng đơn: ' + code);
+    return;
+  }
+  outbox.push({ id: newId(), code, time: Date.now() });
+  saveOutbox();
+  renderAll();
+  if (isOpen()) {
+    flushOutbox();
+    setTimeout(renderAll, PENDING_SHOW_DELAY + 50); // if still unacked by then, show it as pending
+  } else {
+    showToast('Chưa có mạng - đã lưu tạm, sẽ tự đồng bộ');
+  }
+}
+
+// ---- Connection + heartbeat ---------------------------------------------------
 function connect() {
-  ws = new WebSocket(proto + '//' + location.host + '/r/' + roomId + '/ws');
-  ws.onopen = () => { setStatus('connected'); reconnectDelay = 1000; };
-  ws.onclose = () => { if (!closed) { setStatus('disconnected'); scheduleReconnect(); } };
-  ws.onerror = () => ws.close();
-  ws.onmessage = (event) => handleMessage(JSON.parse(event.data));
+  clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+  if (closed || !started) return;
+  const sock = new WebSocket(proto + '//' + location.host + '/r/' + roomId + '/ws');
+  ws = sock;
+  setStatus('connecting');
+  // a connection attempt on a dead network can hang for a long time
+  setTimeout(() => { if (ws === sock && sock.readyState !== WebSocket.OPEN) dropConnection(); }, 8000);
+  sock.onopen = () => {
+    if (ws !== sock) return;
+    setStatus('connected');
+    reconnectDelay = 1000;
+    lastRecv = Date.now();
+    startHeartbeat();
+  };
+  sock.onclose = () => { if (ws === sock) dropConnection(); };
+  sock.onerror = () => { try { sock.close(); } catch {} };
+  sock.onmessage = (event) => {
+    if (ws !== sock) return;
+    lastRecv = Date.now();
+    handleMessage(JSON.parse(event.data));
+  };
+}
+// Socket closed, or it looks dead (a half-open connection still reports OPEN).
+function dropConnection() {
+  stopHeartbeat();
+  const old = ws;
+  if (old) {
+    old.onopen = old.onclose = old.onerror = old.onmessage = null;
+    try { old.close(); } catch {}
+  }
+  if (closed || !started) return;
+  setStatus('disconnected');
+  renderAll();
+  scheduleReconnect();
 }
 function scheduleReconnect() {
-  setTimeout(connect, reconnectDelay);
+  if (reconnectTimer) return;
+  reconnectTimer = setTimeout(connect, reconnectDelay);
   reconnectDelay = Math.min(reconnectDelay * 1.5, 10000);
 }
+function reconnectNow() {
+  if (closed || !started) return;
+  if (isOpen() && Date.now() - lastRecv < 12000) return; // looks healthy
+  dropConnection();
+  reconnectDelay = 1000;
+  connect();
+}
+function startHeartbeat() {
+  stopHeartbeat();
+  hbTimer = setInterval(() => {
+    if (!isOpen()) return;
+    // nothing (not even a pong) for 12s -> the link is dead even though readyState says OPEN
+    if (Date.now() - lastRecv > 12000) { dropConnection(); return; }
+    try { ws.send('{"type":"ping"}'); } catch {}
+    flushOutbox(); // retry anything that never got an ack
+  }, 5000);
+}
+function stopHeartbeat() {
+  clearInterval(hbTimer);
+  hbTimer = null;
+}
+window.addEventListener('online', reconnectNow);
+window.addEventListener('offline', () => dropConnection());
+document.addEventListener('visibilitychange', () => { if (!document.hidden) reconnectNow(); });
 const statusLabels = { connecting: 'Đang kết nối...', connected: 'Đã kết nối', disconnected: 'Mất kết nối, đang thử lại...' };
 const statusDotEl = document.getElementById('statusDot');
 const statusEl = document.getElementById('wsStatus');
@@ -448,9 +592,19 @@ function handleMessage(msg) {
   if (msg.type === 'init') {
     codes = msg.codes.slice().reverse(); // newest first
     history = (msg.history || []).slice().reverse(); // newest batch first
+    // Anything the server already has (its ack was lost) is no longer pending.
+    const known = {};
+    msg.codes.forEach((c) => { if (c.id) known[c.id] = true; });
+    (msg.history || []).forEach((b) => b.codes.forEach((c) => { if (c.id) known[c.id] = true; }));
+    outbox = outbox.filter((o) => !known[o.id]);
+    saveOutbox();
     renderAll();
     renderHistory();
+    flushOutbox(true); // (re)send everything still unacknowledged
+  } else if (msg.type === 'ack') {
+    removeFromOutbox(msg.id);
   } else if (msg.type === 'code_added') {
+    if (msg.entry.id) removeFromOutbox(msg.entry.id, true); // our own scan: swap pending row for the real one in one render
     codes.unshift(msg.entry);
     justAddedCode = msg.entry.code;
     clearTimeout(justAddedTimer);
@@ -472,6 +626,10 @@ function handleMessage(msg) {
     if (isMobile) focusHiddenKeyboard();
   } else if (msg.type === 'room_closed') {
     closed = true;
+    stopHeartbeat();
+    outbox = []; // room is gone: pending scans can't be delivered (and must not leak into a future room with the same name)
+    saveOutbox();
+    renderAll();
     setStatus('disconnected');
     document.getElementById('overlay').classList.add('show');
     document.getElementById('scanInput').disabled = true;
@@ -529,14 +687,28 @@ historyToggleEl.onclick = () => {
 };
 
 function renderAll() {
-  statusCountEl.textContent = codes.length + ' mã';
+  const pending = visiblePending();
+  statusCountEl.textContent = codes.length + ' mã' + (pending.length ? ' · ' + pending.length + ' chờ gửi' : '');
   countEl.textContent = codes.length ? 'Quét lúc ' + formatTime(codes[0].time) : '';
   updateHeaderHeight();
-  if (codes.length === 0) {
+  if (codes.length === 0 && pending.length === 0) {
     listEl.innerHTML = '<div class="empty">Chưa có mã nào được quét</div>';
     return;
   }
   listEl.innerHTML = '';
+  pending.slice().reverse().forEach((item) => {
+    const li = document.createElement('li');
+    li.className = 'pending';
+    const left = document.createElement('span');
+    left.className = 'code-text';
+    left.textContent = item.code;
+    const tag = document.createElement('span');
+    tag.className = 'pending-tag';
+    tag.textContent = 'Chờ gửi';
+    li.appendChild(left);
+    li.appendChild(tag);
+    listEl.appendChild(li);
+  });
   codes.forEach((entry, i) => {
     const code = entry.code;
     const li = document.createElement('li');
@@ -550,7 +722,7 @@ function renderAll() {
     delBtn.onclick = async () => {
       const ok = await showConfirm('Xóa mã ' + code + '?');
       if (ok) {
-        ws.send(JSON.stringify({ type: 'delete_code', code }));
+        safeSend({ type: 'delete_code', code });
       }
       if (isMobile) focusHiddenKeyboard();
     };
@@ -650,9 +822,7 @@ input.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
     e.preventDefault();
     const code = input.value.trim();
-    if (code && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'scan', code }));
-    }
+    if (code) submitScan(code);
     input.value = '';
     if (isMobile) {
       focusHiddenKeyboard(); // back to silent listening mode
@@ -675,7 +845,7 @@ document.getElementById('clearBtn').onclick = async () => {
   if (codes.length === 0) return;
   const ok = await showConfirm('Xóa toàn bộ danh sách mã trong phòng?');
   if (ok) {
-    ws.send(JSON.stringify({ type: 'clear_list' }));
+    safeSend({ type: 'clear_list' });
   }
   if (isMobile) focusHiddenKeyboard();
 };
@@ -683,7 +853,7 @@ document.getElementById('clearBtn').onclick = async () => {
 document.getElementById('closeBtn').onclick = async () => {
   const ok = await showConfirm('Đóng phòng này? Mọi thiết bị đang kết nối sẽ bị ngắt.');
   if (ok) {
-    ws.send(JSON.stringify({ type: 'close_room' }));
+    safeSend({ type: 'close_room' });
   }
 };
 
@@ -698,6 +868,7 @@ fetch('/api/rooms/check', {
   .then((res) => res.json())
   .then((data) => {
     if (data.exists) {
+      started = true;
       connect();
     } else {
       closed = true;
@@ -707,6 +878,7 @@ fetch('/api/rooms/check', {
   })
   .catch(() => {
     // Network hiccup on the check itself — don't block the user, just try to connect anyway.
+    started = true;
     connect();
   });
 </script>
